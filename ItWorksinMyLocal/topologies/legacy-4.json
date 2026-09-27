@@ -1,0 +1,19 @@
+{
+  "name": "legacy-4",
+  "description": "4 oldxdc validators, no followers -- the baseline regression topology (mirrors run.sh's default local net). Useful as a smoke test for the topology engine itself and as a control group for client-matrix comparisons.",
+  "chainId": 34090,
+  "epoch": 900,
+  "v2block": 900,
+  "period": 1,
+  "reward": 5000,
+  "gap": 450,
+  "gasLimit": 420000000,
+  "portBase": 34000,
+  "staggerSeconds": 5,
+  "nodes": [
+    { "id": "node1", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_1" },
+    { "id": "node2", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_2" },
+    { "id": "node3", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_3" },
+    { "id": "node4", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_4" }
+  ]
+}

@@ -1,0 +1,171 @@
+// Copyright 2016 The go-ethereum Authors
+// This file is part of the go-ethereum library.
+//
+// The go-ethereum library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// The go-ethereum library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
+
+package core
+
+import (
+	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
+)
+
+// ChainContext supports retrieving headers and consensus parameters from the
+// current blockchain to be used during transaction processing.
+type ChainContext interface {
+	consensus.ChainHeaderReader
+
+	// Engine retrieves the chain's consensus engine.
+	Engine() consensus.Engine
+}
+
+// NewEVMBlockContext creates a new context for use in the EVM.
+func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common.Address) vm.BlockContext {
+	var (
+		beneficiary common.Address
+		baseFee     *big.Int
+		blobBaseFee *big.Int
+		random      *common.Hash
+		slotNum     uint64
+	)
+
+	// If we don't have an explicit author (i.e. not mining), extract from the header
+	if author == nil {
+		beneficiary, _ = chain.Engine().Author(header) // Ignore error, we're past header validation
+	} else {
+		beneficiary = *author
+	}
+	if header.BaseFee != nil {
+		baseFee = new(big.Int).Set(header.BaseFee)
+	}
+	if header.ExcessBlobGas != nil {
+		blobBaseFee = eip4844.CalcBlobFee(chain.Config(), header)
+	}
+	// XDC Network: Use Keccak256(blockNumber) as PREVRANDAO
+	// XDC doesn't use difficulty/mixdigest for randomness.
+	// Reference: XDPoSChain/core/evm.go — "since xdpos chain do not use difficulty
+	// and mixdigest, we use hash of the block number as random"
+	// Fixes: https://github.com/AnilChinchawale/go-ethereum/issues/40
+	if chain != nil && chain.Config().IsXDC() {
+		xdcRandom := crypto.Keccak256Hash(header.Number.Bytes())
+		random = &xdcRandom
+	} else if header.Difficulty.Sign() == 0 {
+		random = &header.MixDigest
+	}
+	if header.SlotNumber != nil {
+		slotNum = *header.SlotNumber
+	}
+
+	return vm.BlockContext{
+		CanTransfer:      CanTransfer,
+		Transfer:         Transfer,
+		GetHash:          GetHashFn(header, chain),
+		Coinbase:         beneficiary,
+		BlockNumber:      new(big.Int).Set(header.Number),
+		Time:             header.Time,
+		Difficulty:       new(big.Int).Set(header.Difficulty),
+		BaseFee:          baseFee,
+		BlobBaseFee:      blobBaseFee,
+		GasLimit:         header.GasLimit,
+		Random:           random,
+		SlotNum:          slotNum,
+		CostPerStateByte: params.CostPerStateByte,
+	}
+}
+
+// NewEVMTxContext creates a new transaction context for a single transaction.
+func NewEVMTxContext(msg *Message) vm.TxContext {
+	ctx := vm.TxContext{
+		Origin:     msg.From,
+		GasPrice:   msg.GasPrice,
+		BlobHashes: msg.BlobHashes,
+	}
+	return ctx
+}
+
+// GetHashFn returns a GetHashFunc which retrieves header hashes by number
+func GetHashFn(ref *types.Header, chain ChainContext) func(n uint64) common.Hash {
+	// Cache will initially contain [refHash.parent],
+	// Then fill up with [refHash.p, refHash.pp, refHash.ppp, ...]
+	var cache []common.Hash
+
+	return func(n uint64) common.Hash {
+		if ref.Number.Uint64() <= n {
+			// This situation can happen if we're doing tracing and using
+			// block overrides.
+			return common.Hash{}
+		}
+		// If there's no hash cache yet, make one
+		if len(cache) == 0 {
+			cache = append(cache, ref.ParentHash)
+		}
+		if idx := ref.Number.Uint64() - n - 1; idx < uint64(len(cache)) {
+			return cache[idx]
+		}
+		// No luck in the cache, but we can start iterating from the last element we already know
+		lastKnownHash := cache[len(cache)-1]
+		lastKnownNumber := ref.Number.Uint64() - uint64(len(cache))
+
+		for {
+			header := chain.GetHeader(lastKnownHash, lastKnownNumber)
+			if header == nil {
+				break
+			}
+			cache = append(cache, header.ParentHash)
+			lastKnownHash = header.ParentHash
+			lastKnownNumber = header.Number.Uint64() - 1
+			if n == lastKnownNumber {
+				return lastKnownHash
+			}
+		}
+		return common.Hash{}
+	}
+}
+
+// CanTransfer checks whether there are enough funds in the address' account to make a transfer.
+// This does not take the necessary gas in to account to make the transfer valid.
+//
+// XDC: when the sender holds a BigBalance overflow (real balance > uint256max),
+// db.GetBalance returns only the wrapped uint256 value, which can be far less
+// than the requested transfer amount. The wrapped check would incorrectly fail.
+// If the concrete state DB reports a non-nil BigBalance, the sender has at
+// least uint256max — more than any uint256 amount — so allow the transfer.
+func CanTransfer(db vm.StateDB, addr common.Address, amount *uint256.Int) bool {
+	if bigBalProvider, ok := db.(interface {
+		GetBigBalance(common.Address) *big.Int
+	}); ok {
+		if big := bigBalProvider.GetBigBalance(addr); big != nil {
+			return true
+		}
+	}
+	return db.GetBalance(addr).Cmp(amount) >= 0
+}
+
+// Transfer subtracts amount from sender and adds amount to recipient using the given Db
+func Transfer(db vm.StateDB, sender, recipient common.Address, amount *uint256.Int, rules *params.Rules) {
+	db.SubBalance(sender, amount, tracing.BalanceChangeTransfer)
+	db.AddBalance(recipient, amount, tracing.BalanceChangeTransfer)
+	if rules.IsAmsterdam && !amount.IsZero() && sender != recipient {
+		db.AddLog(types.EthTransferLog(sender, recipient, amount))
+	}
+}

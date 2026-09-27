@@ -1,0 +1,8 @@
+# Default peers for XDC devnet 5151 (masternode enodes on their hosts, p2p 30551).
+# join.sh uses these as --staticpeers when none are passed (esp. for erigon, whose
+# discv4 cannot discover XDPoS peers via a bootnode). They mirror DEFAULT_BOOTNODES
+# in network.env. Refreshed 2026-07-21T18:22:15Z via IPC admin.nodeInfo on each host.
+enode://483e6b8858755e1c58578122a2e20ada7a3b0e49bee0f0141649e77184684d909a7b1535a11c4eb7e902faf6fe9509836d1bfb8a18adfdd4e4b8160e47a84024@65.21.71.4:30551
+enode://a496cf12733f3a7bb2a498109c119bf98f49b46812ea6412a7367d6835d78240530804efde54ed471cb9950637b552f53419e3a0d4b247f19565e687942ec3f1@65.21.27.213:30551
+enode://918dcb8137f06fe3a28da977a77b099ab41fe8198d6e5804c7dbd082913b4e3b8cc55e42a69ac5647a61eb54b69ad8a8be564e5c0f941d1f4fd364e52e67aaa4@95.217.112.125:30551
+enode://3d53b9989b3ae8e5e9bbd9ac94e382590419f72aa557882dc6e1c85f766317daca57447958d434fca434093da8ca58cbb794b6b46839118eaaf5076c2e944077@135.181.117.109:30551

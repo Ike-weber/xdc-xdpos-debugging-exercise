@@ -1,0 +1,37 @@
+{
+  "name": "VoteSigHash byte-level compatibility",
+  "description": "Verifies that all clients compute the same signing hash for a Vote message. Input fields are RLP-encoded as per XDPoS v2 spec (XIP-0002). The expected sigHash is keccak256 of the RLP-encoded VoteForSign struct.",
+  "network": "mainnet",
+  "vectors": [
+    {
+      "id": "vote-01",
+      "description": "Round 1, block 900, gap 0",
+      "input": {
+        "proposedBlockInfo": {
+          "round": "0x1",
+          "number": "0x384",
+          "hash": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        },
+        "gapNumber": "0x0"
+      },
+      "expected": {
+        "sigHash": "TODO: fill from reference node"
+      }
+    },
+    {
+      "id": "vote-02",
+      "description": "Round 1000, block 900000, gap 450000",
+      "input": {
+        "proposedBlockInfo": {
+          "round": "0x3e8",
+          "number": "0xDBBA0",
+          "hash": "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        },
+        "gapNumber": "0x6DDD0"
+      },
+      "expected": {
+        "sigHash": "TODO: fill from reference node"
+      }
+    }
+  ]
+}

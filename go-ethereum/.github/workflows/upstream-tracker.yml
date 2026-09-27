@@ -1,0 +1,206 @@
+name: Upstream Release Tracker (geth)
+
+# Watches ethereum/go-ethereum for new stable releases. Publishes the upstream tag as a
+# sync branch (upstream-sync/<tag>) and opens a PR targeting our stable line (main) so
+# GitHub computes the merge itself and shows conflicts NATIVELY (its "conflicts must be
+# resolved" banner + file list). Conflicts are resolved LOCALLY by the reviewer with the
+# XDPoS parity harness — consensus is sacred, never GitHub's web editor and never
+# pre-committed markers.
+#
+# NOTE 1: GitHub only fires `schedule` triggers from the repository DEFAULT branch. For
+#   the 15-min cron to run, this file must live on the default branch (or make main the
+#   default). `workflow_dispatch` works from any branch.
+# NOTE 2: Publishing the tag branch carries upstream's .github/workflows changes, and
+#   creating PRs/issues is blocked for the Actions GITHUB_TOKEN under org policy. Both
+#   need a PAT with `repo` + `workflow` scope: set secrets.UPSTREAM_SYNC_TOKEN.
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'      # every 15 minutes
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Detect the newest upstream release but do NOT open a PR'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: upstream-sync-geth
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/ethereum/go-ethereum.git
+  UPSTREAM_REPO: ethereum/go-ethereum      # owner/repo for pulling release notes into the PR/issue
+  STABLE_BRANCH: main
+  REVIEWER: AnilChinchawale
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout stable branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Detect newest upstream release + prepare sync branch
+        id: sync
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '0' }}
+          GIT_AUTHOR_NAME: anilchinchawale
+          GIT_AUTHOR_EMAIL: anil24593@gmail.com
+        run: bash scripts/upstream-sync.sh
+
+      - name: Push sync branch (upstream tag → GitHub computes the merge)
+        if: steps.sync.outputs.status == 'clean' || steps.sync.outputs.status == 'conflicts'
+        run: git push --force-with-lease origin "${{ steps.sync.outputs.sync_branch }}"
+
+      - name: Open / refresh sync PR
+        if: steps.sync.outputs.status == 'clean' || steps.sync.outputs.status == 'conflicts'
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}   # force gh to target THIS repo, not the `upstream` remote
+          TAG: ${{ steps.sync.outputs.latest_tag }}
+          BRANCH: ${{ steps.sync.outputs.sync_branch }}
+          STATUS: ${{ steps.sync.outputs.status }}
+          MANIFEST: ${{ steps.sync.outputs.conflict_manifest }}
+        run: |
+          LABELS="upstream-sync"
+          DRAFT=""
+          if [ "$STATUS" = "conflicts" ]; then
+            LABELS="upstream-sync,conflicts,needs-manual-merge"
+            DRAFT="--draft"
+            SECTION="⚠️ **GitHub shows the native \"conflicts must be resolved\" banner above** — this PR is a Draft until they are resolved.
+
+          Resolve **locally** (never the web editor — consensus is sacred), then merge:
+          \`\`\`
+          git fetch origin
+          git checkout -B resolve-$TAG origin/$STABLE_BRANCH
+          git merge $BRANCH          # keep every // XDC hook, take upstream's surrounding fix
+          # run the XDPoS parity harness, then push resolve-$TAG and merge this PR
+          \`\`\`
+          Conflicting files (marker lines):
+          $MANIFEST"
+          else
+            SECTION="✅ Merges cleanly into \`$STABLE_BRANCH\` — GitHub can merge this directly. Review, then merge (brings the full upstream history in). Custom XDC workflows live only on our side and are untouched; shared CI files take upstream's changes."
+          fi
+          # Pull upstream release notes + divergence scale, then build the body in a FILE
+          # (safe from backticks/$ in release notes, unlike an inline shell string).
+          gh api "repos/$UPSTREAM_REPO/releases/tags/$TAG" --jq '.body' > /tmp/relnotes.md 2>/dev/null || echo "_(release notes unavailable)_" > /tmp/relnotes.md
+          STATS=$(gh api "repos/$GITHUB_REPOSITORY/compare/$STABLE_BRANCH...$BRANCH" --jq '"\(.ahead_by) ahead / \(.behind_by) behind / \(.files|length) files"' 2>/dev/null || echo "n/a")
+          cat > /tmp/body.md <<EOF
+          ## Automated upstream sync → \`$STABLE_BRANCH\`
+
+          Publishes **$UPSTREAM_REPO \`$TAG\`** as \`$BRANCH\` and targets \`$STABLE_BRANCH\`, so GitHub computes the merge itself — conflicts show natively above, not as pre-committed markers.
+
+          $SECTION
+
+          ### Merge status: \`$STATUS\` · scale: $STATS
+
+          ### Reviewer gate (consensus is sacred — do NOT merge until all pass)
+          - [ ] Conflicts resolved locally (keep every \`// XDC\` hook; take upstream's surrounding fixes)
+          - [ ] \`go build ./...\` clean · \`go test -short ./consensus/XDPoS/... ./core/...\` clean · \`make lint\`
+          - [ ] **XDPoS parity harness** green (net5050 + apothem: header hash, state root, receipts, QC verify)
+          - [ ] **No upstream hardfork auto-activates** in the XDC chain configs
+          - [ ] On merge, the \`Alpha Deploy + Hive E2E\` workflow runs and must pass before release
+          EOF
+          { echo; echo "<details><summary>📋 Upstream $TAG release notes</summary>"; echo; cat /tmp/relnotes.md; echo; echo "</details>"; echo; echo "Generated by \`.github/workflows/upstream-tracker.yml\`. cc @$REVIEWER"; } >> /tmp/body.md
+          # The just-pushed branch can take a few seconds to propagate to the API; retry
+          # create (via --body-file). Assignee/reviewer are set via REST afterward (they
+          # would otherwise need read:org, which the PAT lacks).
+          PRNUM=""
+          for attempt in 1 2 3 4 5; do
+            if gh pr create --base "$STABLE_BRANCH" --head "$BRANCH" $DRAFT \
+                 --title "chore: sync upstream $TAG into $STABLE_BRANCH" --body-file /tmp/body.md 2>/tmp/prerr; then
+              PRNUM=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number'); break
+            fi
+            if grep -qi 'already exists' /tmp/prerr; then
+              PRNUM=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')
+              gh pr edit "$PRNUM" --body-file /tmp/body.md || true; break
+            fi
+            echo "PR create attempt $attempt failed (branch may still be propagating):"; cat /tmp/prerr
+            sleep 12
+          done
+          [ -n "$PRNUM" ] || { echo "::error::could not open PR for $BRANCH after retries"; exit 1; }
+          echo "opened/updated PR #$PRNUM"
+          gh pr edit "$PRNUM" --add-label "$LABELS" 2>/dev/null || true
+          # Assignee + reviewer via REST (avoids the read:org that `gh --assignee/--reviewer` require).
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PRNUM/assignees" -f "assignees[]=$REVIEWER" >/dev/null 2>&1 || true
+          gh api -X POST "repos/$GITHUB_REPOSITORY/pulls/$PRNUM/requested_reviewers" -f "reviewers[]=$REVIEWER" >/dev/null 2>&1 || true
+
+      - name: Open release-validation issue
+        if: steps.sync.outputs.status == 'clean' || steps.sync.outputs.status == 'conflicts'
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}   # force gh to target THIS repo, not the `upstream` remote
+          TAG: ${{ steps.sync.outputs.latest_tag }}
+          BRANCH: ${{ steps.sync.outputs.sync_branch }}
+          STATUS: ${{ steps.sync.outputs.status }}
+          MANIFEST: ${{ steps.sync.outputs.conflict_manifest }}
+        run: |
+          if gh issue list --search "Validate upstream $TAG sync in:title" --state open --json number --jq '.[0].number' | grep -q .; then
+            echo "validation issue for $TAG already open"; exit 0
+          fi
+          CF_MD="Clean merge — no conflicts."
+          [ "$STATUS" = "conflicts" ] && CF_MD="$MANIFEST"
+          gh api "repos/$UPSTREAM_REPO/releases/tags/$TAG" --jq '.body' > /tmp/relnotes.md 2>/dev/null || echo "_(release notes unavailable)_" > /tmp/relnotes.md
+          cat > /tmp/ibody.md <<EOF
+          Validation tracker for the auto-sync of upstream **$TAG** into \`$STABLE_BRANCH\`. The sync branch \`$BRANCH\` is the upstream tag itself, so GitHub computes the merge and shows conflicts natively; the reviewer resolves locally (preserving upstream history + XDC hooks). Companion to the sync PR.
+
+          ### Merge conflicts to resolve (keep every \`// XDC\` hook; take upstream around them)
+          $CF_MD
+
+          ### Test suites that MUST pass before merge
+          - Build: \`make geth\` and \`go build ./...\`
+          - Unit: \`go test -short -count=1 ./consensus/XDPoS/... ./core/...\`
+          - Lint: \`make lint\`
+          - **XDPoS parity (SACRED — bit-exact):** \`tools/parity-harness\`, \`scripts/xdc-parity-check.sh\`, \`scripts/validate-canonical-parity.sh\` over net5050 + apothem + hardfork-boundary blocks (header hash, state root, receipts root, QC verify). Any mismatch = P0, do not merge.
+          - Confirm no new upstream hardfork auto-activates in the XDC chain configs.
+          - CI: \`xdc-build.yml\` + \`xdc-test.yml\` green.
+
+          ### Hive E2E
+          The \`Alpha Deploy + Hive E2E\` workflow runs on merge (self-hosted + \`clients/xdc\`). Manual:
+          \`\`\`
+          make geth
+          git clone --depth 1 https://github.com/ethereum/hive && cd hive   # add clients/xdc once
+          go run . --sim ethereum/rpc  --client xdc
+          go run . --sim ethereum/sync --client xdc
+          go run . --sim devp2p        --client xdc
+          \`\`\`
+
+          ### Acceptance (all green → merge the sync PR → tag)
+          - [ ] conflicts resolved (XDC hooks intact)   - [ ] build + unit + lint green
+          - [ ] XDPoS parity bit-exact (net5050 + apothem)   - [ ] no hardfork auto-activation
+          - [ ] Hive rpc/sync/devp2p green   - [ ] alpha node smoke OK
+          EOF
+          { echo; echo "<details><summary>📋 Upstream $TAG release notes</summary>"; echo; cat /tmp/relnotes.md; echo; echo "</details>"; echo; echo "Generated by \`.github/workflows/upstream-tracker.yml\`. cc @$REVIEWER"; } >> /tmp/ibody.md
+          # Create without --assignee (needs read:org); assign via REST (repo scope).
+          IURL=$(gh issue create --title "Validate upstream $TAG sync: test suite + Hive e2e + XDPoS parity gate" \
+            --body-file /tmp/ibody.md) || true
+          if [ -n "$IURL" ]; then
+            INUM=$(echo "$IURL" | grep -oE '[0-9]+$')
+            gh issue edit "$INUM" --add-label upstream-sync 2>/dev/null || true
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$INUM/assignees" -f "assignees[]=$REVIEWER" >/dev/null 2>&1 || true
+          fi
+
+      - name: Open issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}   # force gh to target THIS repo, not the `upstream` remote
+        run: |
+          IURL=$(gh issue create \
+            --title "🚨 upstream-sync failed for ${{ steps.sync.outputs.latest_tag }}" \
+            --body "The Upstream Release Tracker failed at step status=\`${{ steps.sync.outputs.status }}\`.
+          If the push step failed with a workflow-scope error, add the \`UPSTREAM_SYNC_TOKEN\` PAT secret (repo + workflow scope).
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          cc @${{ env.REVIEWER }}" \
+            --label "upstream-sync,ci-failure") || true
+          [ -n "$IURL" ] && gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$(echo "$IURL" | grep -oE '[0-9]+$')/assignees" -f "assignees[]=${{ env.REVIEWER }}" >/dev/null 2>&1 || true

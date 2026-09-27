@@ -1,0 +1,53 @@
+*_network
+nodes*
+# nodes/.topology -- the per-run launch manifest run.sh writes and status.sh
+# reads (ItWorksinMyLocal#181). Already covered by the "nodes*" pattern above
+# (it ignores the whole nodes/ tree); listed explicitly too so it reads as
+# deliberate local state, not an accident of a broader glob.
+nodes/.topology
+.env
+
+localdpos.json
+one.json
+.pwd
+network-roles.env
+# gen-address.sh accounts JSON -- holds private keys, never commit.
+accounts/
+bin/
+gethtest
+gethjoin
+/peer/
+/peer-*/
+peertest/
+erigon-genesis.json
+
+# Lab (XDPoS multi-client consensus test lab) -- see docs/lab/DESIGN.md §10
+lab/results/
+lab/lab-accounts.env
+lab/*/peer/
+lab/**/datadir
+lab/genesis-lab-*.json
+genesis/genesis-*-0x.json
+
+# gen-genesis.sh writes an archival genesis/genesis-<chainid>.json next to the
+# genesis.json it generates. Local/ad-hoc chain ids are throwaway, so ignore
+# them by default; the vendored public-network genesis files below stay
+# tracked (already-tracked paths are unaffected by these rules anyway).
+genesis/genesis-*.json
+!genesis/genesis-5151.json
+!genesis/genesis-mainnet.json
+!genesis/genesis-testnet.json
+!genesis/genesis-devnet5551.json
+
+# onboard-masternode.sh (ItWorksinMyLocal#62) -- brand-new owner/coinbase
+# private keys, chmod 600, NEVER committed. Default --keyfile already lands
+# under lab/results/ (covered above); this pattern is a safety net for any
+# --keyfile path a caller points elsewhere under lab/ instead.
+lab/onboard-*.env
+lab/onboard-*.env.state
+
+# publish-bins.sh -- build/publish staging area (checkouts, staged binaries,
+# logs, state.tsv) and the real publish.env (host/dir config; see
+# publish.env.sample for the template -- this one is never committed).
+dist/
+publish.env

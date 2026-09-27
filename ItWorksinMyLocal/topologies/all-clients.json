@@ -1,0 +1,24 @@
+{
+  "name": "all-clients",
+  "description": "4 oldxdc validators + one follower of every OTHER client that can join a custom-chainId network from a genesis file: geth, erigon, besu, reth, xone. nethermind is deliberately excluded -- it only loads its own bundled net5151 Parity-style chainspec, not an arbitrary --genesis file (ItWorksinMyLocal#46 open question #2; nethermind stays a net5151-join-only client until a genesis->chainspec converter exists). The full cross-client bring-up for peer-starvation / matrix-style regression testing.",
+  "chainId": 34092,
+  "epoch": 900,
+  "v2block": 900,
+  "period": 1,
+  "reward": 5000,
+  "gap": 450,
+  "gasLimit": 420000000,
+  "portBase": 34200,
+  "staggerSeconds": 8,
+  "nodes": [
+    { "id": "node1", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_1" },
+    { "id": "node2", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_2" },
+    { "id": "node3", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_3" },
+    { "id": "node4", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_4" },
+    { "id": "geth1", "client": "geth", "role": "follower" },
+    { "id": "erigon1", "client": "erigon", "role": "follower" },
+    { "id": "besu1", "client": "besu", "role": "follower" },
+    { "id": "reth1", "client": "reth", "role": "follower" },
+    { "id": "xone1", "client": "xone", "role": "follower" }
+  ]
+}

@@ -1,0 +1,157 @@
+{
+  "_comment": "Prebuilt-binary manifest for lib.sh:download_bins() / join.sh. baseUrl + file (with {os}/{arch} substituted) form the download URL; archive says how to unpack it; produces maps a logical binary name to its path *inside* the download (\"\" = the download IS the binary, \".\" = the whole extracted directory is the product, e.g. a dist dir). platforms uses {os}-{arch} keys (darwin|linux, amd64|arm64); \"*\" = platform-independent. sha256 keys mirror platforms (or \"*\"), fetched from the upstream <file>.sha256 siblings on xdc.network. Re-run the fetch and bump 'updated' if xdc.network publishes new binaries. A client entry may set its own \"baseUrl\" to override this global one (e.g. to pull an urgent fix from a GitHub release before it's mirrored to xdc.network) -- see lib.sh:_binjson_query.",
+  "baseUrl": "https://xdc.network/snapshots/bin/",
+  "updated": "2026-08-01",
+  "clients": {
+    "oldxdc": {
+      "_comment": "XDPoSChain (XDCIndia/OLDXDC), the legacy sealer client run.sh/setup.sh use by default. Previously ALWAYS built from source (lib.sh hardcoded this regardless of BIN_SOURCE) since no prebuilt existed anywhere -- every `run.sh --chainid N` / `setup.sh --new` clone+built from scratch even for a plain resume, adding minutes before any node came up. Published this tarball (XDC + bootnode + puppeth, linux-amd64) from XDCIndia/OLDXDC's pinned commit 0648a96a22affcc0b4dd2201614a118b084fe7bf (the 'XDPoSChain codebase snapshot with puppeth wizard genesis fix' XDPOS_REPO already points at) so lib.sh:download_bins() has something to fetch. Now respects BIN_SOURCE/BIN_SOURCE_oldxdc like every other client: download by default, `--build` (run.sh/setup.sh) or BIN_SOURCE_oldxdc=build forces a from-source clone+build instead. darwin-amd64/darwin-arm64 are the SAME tar.gz, published 2026-08-01: XDC + bootnode + puppeth, each a universal (lipo fat) x86_64+arm64 Mach-O built from XDPOS_REPO 0648a96a (2.7.1-stable), amd64 slices cross-compiled via build/ci.go install -arch amd64. This removes the from-source fallback that every macOS clone hit -- previously the only darwin artifact on the mirror was a bare `oldxdc-darwin-arm64` (no .tar.gz, XDC only, 2.7.0-beta 2ab28ce9), which the manifest neither found nor could use since it needs all three binaries. Gated before publish: genesis hash identical to the live sealers and synced to tip as a follower.",
+      "ghRelease": {
+        "repo": "XDCIndia/OLDXDC",
+        "tag": "v2.7.1-stable-linux-amd64"
+      },
+      "file": "oldxdc-{os}-{arch}.tar.gz",
+      "archive": "tar.gz",
+      "produces": {
+        "XDC": "XDC",
+        "bootnode": "bootnode",
+        "puppeth": "puppeth"
+      },
+      "platforms": [
+        "linux-amd64",
+        "darwin-amd64",
+        "darwin-arm64"
+      ],
+      "sha256": {
+        "linux-amd64": "e18dac588ce0c5ef4235f9f0aecf7a5030bac628352a487502d5c4a298e2ccca",
+        "darwin-amd64": "9cdbf7ea1d7fd425665c1e4c9053ca279d95fd62962cb02240452446cb1e95ae",
+        "darwin-arm64": "9cdbf7ea1d7fd425665c1e4c9053ca279d95fd62962cb02240452446cb1e95ae"
+      }
+    },
+    "geth": {
+      "_comment": "geth, tracking the base branch at 1.17.5-xdc.8. darwin-amd64/darwin-arm64 are the SAME universal (lipo fat) binary -- identical sha256 under both filenames, runs natively on either Mac architecture. linux-amd64 REBUILT 2026-07-31 at f39bb0769d0c so it carries a Git Commit stamp (ItWorksinMyLocal#156): the previous artifact reported none, which made it impossible to tell from --version whether a node ran a current or a stale build. Now agrees with the darwin slices on both version and commit. NOTE linux-arm64 is still a 1.17.4-era build and needs a rebuild on an arm64 host or via QEMU/binfmt (see #159) -- geth pulls cgo deps with arch-specific assembly, so it does NOT cross-compile from x86_64.",
+      "file": "geth-{os}-{arch}",
+      "archive": "none",
+      "produces": {
+        "geth": ""
+      },
+      "platforms": [
+        "darwin-amd64",
+        "darwin-arm64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "sha256": {
+        "darwin-amd64": "a68048665b8e4c42e019cfedc6c5a3e3e47e4991b8a3c4d87e675896ecb6ff4c",
+        "darwin-arm64": "a68048665b8e4c42e019cfedc6c5a3e3e47e4991b8a3c4d87e675896ecb6ff4c",
+        "linux-amd64": "d2ed78725c01e05a2afb93d3b81279da445c506f7dfc3c7b647b0985a700608e",
+        "linux-arm64": "b74452cc43587f4aca482166c4214c2b6f72c37e77dd4424b4eeabfc15d9b7b7"
+      }
+    },
+    "geth4": {
+      "_comment": "geth 1.17.4-xdc.7, PINNED. `geth` tracks the base branch (1.17.5-xdc.8); this entry exists to stay on or bisect against 1.17.4. These are the exact bytes that were published as `geth` before the 1.17.5 promotion -- sha256 unchanged, so the trust story is untouched. Was the `geth1175` slot, which is retired now that geth IS 1.17.5.",
+      "file": "geth4-{os}-{arch}",
+      "archive": "none",
+      "produces": {
+        "geth": ""
+      },
+      "platforms": [
+        "linux-amd64"
+      ],
+      "sha256": {
+        "linux-amd64": "705406e8c5b7339b0f429d841a7ba6d5568f2956a5d46d12fa3fcd09798f8d31"
+      }
+    },
+    "erigon": {
+      "_comment": "linux-amd64 + darwin (universal) published. darwin-amd64/darwin-arm64 are the SAME lipo fat binary, REBUILT 2026-07-31 from main at commit 1ccfe435847bcedcec5d651f4514fb7ec3429c94, self-reporting 'erigon version 3.5.2-1ccfe435' (arm64 native + amd64 cross-compiled with CGO_ENABLED=1 CC/CXX=clang -arch x86_64, needed since erigon uses cgo for mdbx/blst/evmone). This is the merge of PR XDCIndia/erigon-xdc#369 'gate genesis baseFee on IsEIP1559, not IsLondon' -- the pre-#369 darwin artifact (2026-07-24, sha 61b79adc) synthesises a baseFee into the genesis header on any chain that defers EIP-1559 (londonBlock=0 while eip1559Block>0), giving a genesis hash the other clients reject, which presents as permanent '[p2p] No GoodPeers'. Gated before publish on a live 4-sealer oldxdc net (chainId 4114, londonBlock=0/eip1559Block=2250 -- the divergent shape): genesis 0xbff02fb6a1068192a2b63a5c3406e6c2ed487661fdf1949a1aa173c42945ee29 identical to the sealers with baseFeePerGas absent, peers=4, tracked tip in lockstep, block-hash parity with the sealers and reth at blocks 0/16/81/82. Only the arm64 slice was exercised at runtime (arm64 host); the amd64 slice is verified structurally via lipo -info. Other platforms fall back to a source build (lib.sh). See ItWorksinMyLocal #159.",
+      "file": "erigon-{os}-{arch}",
+      "archive": "none",
+      "produces": {
+        "erigon": ""
+      },
+      "platforms": [
+        "linux-amd64",
+        "darwin-amd64",
+        "darwin-arm64"
+      ],
+      "sha256": {
+        "linux-amd64": "55b25cf932bd416bc4c2e582f5ab7b4e4d800ae1ee5122e993c81e43b2c8b893",
+        "darwin-amd64": "091e5be358bac195966b34387f0279e9b6e89bdd4853db5d38b47f7cff105dec",
+        "darwin-arm64": "091e5be358bac195966b34387f0279e9b6e89bdd4853db5d38b47f7cff105dec"
+      }
+    },
+    "reth": {
+      "_comment": "darwin-amd64/darwin-arm64 are the SAME universal (lipo fat) binary, REBUILT 2026-07-31 from main at commit 180f037fe0224b308649b25dcc57d04921ee1918, self-reporting 'Reth Version: 2.2.0 / Commit SHA: 180f037fe0224b308649b25dcc57d04921ee1918'. This is the merge of PR XDCIndia/reth#278 'read EIP-1559 activation from genesis in the shared executed-spec helper' (supersedes #277, with #276 behind it); it carries the earlier #12/#253 chain-recognition fix too. The pre-#278 darwin artifact (2026-07-24, sha f36af077) REJECTS blocks containing BlockSigners 0x89 sign() txs -- measured invalid at blocks 81/82 on chainId 20931. Gated before publish on a live 4-sealer oldxdc net (chainId 4114): recognised XDPoS V1+V2 natively, computed genesis 0xbff02fb6a1068192a2b63a5c3406e6c2ed487661fdf1949a1aa173c42945ee29 matching the sealers, executed 24 sign() txs to 0x...0089 (selector 0xe341eaa4, first at block 16) with ZERO Invalid payload statuses, and reached tip with block-hash parity against the sealers and erigon at blocks 0/16/81/82. Only the arm64 slice was exercised at runtime (arm64 host); the amd64 slice is verified structurally via lipo -info. amd64 cross-compiled via `rustup target add x86_64-apple-darwin --toolchain stable` (default toolchain here is a pre-2024-edition nightly; must use stable). Other platforms unchanged. See ItWorksinMyLocal #159.",
+      "file": "reth-{os}-{arch}",
+      "archive": "none",
+      "produces": {
+        "xdc-reth": ""
+      },
+      "platforms": [
+        "darwin-amd64",
+        "darwin-arm64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "sha256": {
+        "darwin-amd64": "36e7e0763a0ea63a3998bc39a06042fe71c1289539e938f84e110d6772c55157",
+        "darwin-arm64": "36e7e0763a0ea63a3998bc39a06042fe71c1289539e938f84e110d6772c55157",
+        "linux-amd64": "1584a43309942d55ae8ee6480ad8c5600e1892c4e2ec74aee82bb288b691f692",
+        "linux-arm64": "425dc422c7f1eecfbd655fdecff8827f208adee73b8060ffdde9507513497630"
+      }
+    },
+    "besu": {
+      "_comment": "Java, platform-independent \u2014 now SELF-CONTAINED: the archive bundles a Temurin JRE 21 (real conf/security, not the Ubuntu-JDK /etc symlink) under jre/ and the bin/besu launcher is patched to use $APP_HOME/jre, so NO host Java is required (the previous dist needed host Java >=21). Archive contains bin/besu (launcher) + jre/ (bundled runtime) + lib/*.jar. Built on the 7ade4f2f v00.0-develop base (net5151-working; supersedes the broken v26.7 246e5030 that failed net5151 block-1, see ItWorksinMyLocal #51). Public mainnet/apothem still need the client-side fork-id fix (issue #69) to peer; net5151 syncs.",
+      "file": "besu-latest.tar.gz",
+      "archive": "tar.gz",
+      "produces": {
+        "besu": "bin/besu"
+      },
+      "platforms": [
+        "*"
+      ],
+      "sha256": {
+        "*": "594f4ef60d8ce5be4f9914e36857c4d74c745cb1eb0c4f8dbc55875c38926712"
+      }
+    },
+    "nethermind": {
+      "_comment": "No linux-arm64 build published. Archive is a flat .NET publish dir (./nethermind launcher + ./chainspec/*.json + ./configs/*.json at the archive root, no version-prefixed top dir), so produces path is '.' (the whole extracted dir is NETHERMIND_DIST). This archive INCLUDES chainspec/xdc-devnet5151.json (chainId 5151, genesis 0x96f121, XDPoS engine) and its runner config, so join.sh --client nethermind syncs devnet 5151 out of the box. Built from XDCIndia/xdc-nethermind-private with the net5151 follower bypass (PR #246): the legacy chain's non-standard gas schedule can't be recomputed bit-for-bit, so for chainId 5151 the header's gas-derived fields are trusted while state is fully validated -- linux-amd64 verified syncing to the live tip. NOTE: darwin-arm64 refreshed 2026-07-23 (built from main, v1.36.0) but NOT sync-verified (host disk below the 47GB HealthChecks guard) and may be missing chainspec/xdc-devnet5151.json (absent from main at build time); linux-amd64 remains the verified 5151 client -- see issue #32.",
+      "file": "nethermind-{os}-{arch}.tar.gz",
+      "archive": "tar.gz",
+      "produces": {
+        "nethermind": "."
+      },
+      "platforms": [
+        "darwin-amd64",
+        "darwin-arm64",
+        "linux-amd64"
+      ],
+      "sha256": {
+        "darwin-amd64": "73605504463a957d9f89991bdc3c8c9bcab66fa6c3f6e78e219cdb642db1aa42",
+        "darwin-arm64": "b72cb2a7e7fcbd1151121d586e84bfb209b4b977bb7854893d84f0abb09f1292",
+        "linux-amd64": "050679e0e70078f0bcb96513eb460fb64e2df609ef1b7a686c49891c70f6e736"
+      }
+    },
+    "xone": {
+      "_comment": "xone-native (XDCIndia/xOneGo), the go-ethereum-derived XDPoS reference client (built from pkg/cmd/xone-native; the `xone` binary is only a launcher). NOTE: use `xone --version` (not the `version` subcommand, which boots a node). darwin-amd64/darwin-arm64 are the SAME universal (lipo fat) binary, built 2026-08-01 from master at 8a054c05 (merge of XDCIndia/xOneGo#715). RESTORED to platforms after #715: the previous darwin artifact was dropped because it computed a DIFFERENT genesis hash than every other client (ItWorksinMyLocal#114). Root cause was xOneGo's hasBuiltinXDCProfile() chain-id allowlist {50,51,5551,5050,5151,34093}: outside it, Genesis.ToBlock() skipped attaching the empty XDCHeaderExtra, so the three 0x80 strings (Validators/Validator/Penalties) dropped out of the header RLP. #715 makes detection config-driven (ChainConfig.XDPoS presence) and splits the native-RLPx transport behind node.Config.NativeRLPx so detection no longer implies a networking change. Gated before publish on a live 9-node mixed-client net (chainId 5252: 4 oldxdc sealers + geth/geth4/erigon/reth/besu/nethermind): genesis 0x74c9de86... identical to the network, 4 peers, synced to tip 944. linux-amd64 remains the pinned release asset fetched via gh release download.",
+      "ghRelease": {
+        "repo": "XDCIndia/xOneGo",
+        "tag": "v-xdc-xone-mint-20260725"
+      },
+      "file": "xone-{os}-{arch}",
+      "archive": "none",
+      "produces": {
+        "xone": ""
+      },
+      "platforms": [
+        "darwin-arm64",
+        "darwin-amd64",
+        "linux-amd64"
+      ],
+      "sha256": {
+        "linux-amd64": "124cf26e770b8ec120c570b4c156e68fcbe7f42b461c3e2028244ae20f21cc04",
+        "darwin-amd64": "8e1efb6934dd0eb8bd64fb5ed44b515483a299ce38570ff71aed5cbe561caecc",
+        "darwin-arm64": "8e1efb6934dd0eb8bd64fb5ed44b515483a299ce38570ff71aed5cbe561caecc"
+      }
+    }
+  }
+}

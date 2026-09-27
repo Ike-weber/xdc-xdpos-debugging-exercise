@@ -1,0 +1,20 @@
+{
+  "name": "mixed-5",
+  "description": "4 oldxdc validators + 1 modern-geth follower -- the ItWorksinMyLocal#34 topology (4 legacy + 1 modern), reproduced declaratively. node5 must sync genesis->tip in lockstep with the legacy quorum across the V1->V2 switch.",
+  "chainId": 34091,
+  "epoch": 900,
+  "v2block": 900,
+  "period": 1,
+  "reward": 5000,
+  "gap": 450,
+  "gasLimit": 420000000,
+  "portBase": 34100,
+  "staggerSeconds": 5,
+  "nodes": [
+    { "id": "node1", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_1" },
+    { "id": "node2", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_2" },
+    { "id": "node3", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_3" },
+    { "id": "node4", "client": "oldxdc", "role": "sealer", "keyRef": "PRIVATE_KEY_4" },
+    { "id": "node5", "client": "geth", "role": "follower" }
+  ]
+}

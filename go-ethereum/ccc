@@ -1,0 +1,83 @@
+ Where this session lives                                                                                                                                                                                                   
+                                                                                                                                                                                                                             
+  Every Claude Code session is auto-saved as a JSONL transcript at:                
+                                                                                                                                                                                                                             
+  ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl                                                                                                                                                                        
+                                                                
+  For this exact session the path is:                                                                                                                                                                                        
+                                                                
+  /Users/anilchinchawale/.claude/projects/-Users-anilchinchawale-github-XDCNetwork-deVTest-go-ethereum/a1d16408-3dda-475e-b04c-f5cf98591de6.jsonl                                                                            
+                                                                                   
+  The directory name is your repo path with / → -. The filename is a UUID generated when the session began.                                                                                                                  
+                                                                                   
+  How to resume                                                
+                                                                                                                                                                                                                             
+  ┌──────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────┐
+  │                       command                        │                          what it does                          │                                                                                                  
+  ├──────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤
+  │ claude --continue (or claude -c)                     │ resumes the most recent session in the current directory       │                                                                                                  
+  ├──────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤                                                                                                  
+  │ claude --resume (or claude -r)                       │ interactive picker over all sessions for the current directory │                                                                                                  
+  ├──────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────┤                                                                                                  
+  │ claude --resume a1d16408-3dda-475e-b04c-f5cf98591de6 │ resume this specific session by ID                             │
+  └──────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────┘                                                                                                  
+                                                               
+  Run any of these from /Users/anilchinchawale/github/XDCNetwork/deVTest/go-ethereum. The session reloads with full context — every message, every tool call, every output.                                                  
+                                                                                   
+  Listing past sessions                                         
+                                                                
+  ls -lt ~/.claude/projects/-Users-anilchinchawale-github-XDCNetwork-deVTest-go-ethereum/*.jsonl                                                                                                                             
+                                                                
+  The newest one is this session. The summary you saw early on (from a previous compaction) is in a sibling file.                                                                                                            
+                                                                                   
+  What persists across sessions even without resuming                                                                                                                                                                        
+                                                                                   
+  Most of the durable value from this session is OUTSIDE the transcript:                                                                                                                                                     
+                                                                                   
+  ┌─────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │                  where                  │                                                                                    what                                                                                     │  
+  ├─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤  
+  │ ~/.claude/projects/.../memory/MEMORY.md │ the auto-memory file (e.g. the rule about always passing --repo XDCIndia/go-ethereum) — loaded into every future session in this directory                                  │  
+  ├─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤  
+  │ GitHub issues                           │ #682 (bypass cleanup), #683 (upstream workflow), #686 (geth-style alignment), #660 (protocol notes), #651 (legacy bypass catalog)                                           │
+  ├─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤  
+  │ Merged PRs                              │ #679 (#678 fix), #680 (gitignore), #681 (maxpeers), #684/#685 (workflow + baseline docs), #687 (state-DB sub-audit), #688 (auditor prompt), #689 (parity script), #690 (RPC │
+  │                                         │  mode)                                                                                                                                                                      │  
+  ├─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ In-repo docs                            │ docs/UPSTREAM_WORKFLOW.md, docs/UPSTREAM_BASELINE.md, docs/audit/AUDITOR_PROMPT.md, docs/audit/STATE_DB_SUBAUDIT.md                                                         │  
+  ├─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ In-repo scripts                         │ scripts/validate-canonical-parity.sh, scripts/local-sync-test.sh (HTTP RPC enabled)                                                                                         │
+  ├─────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤  
+  │ Live nodes                              │ xdc02 archive climbing past 24.6M; XDC268 reference at 82M                                                                                                                  │  
+  └─────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘  
+                                                                                                                                                                                                                             
+  Even if the session transcript was deleted tomorrow, a new session opened in this directory could rebuild the picture in 5 minutes from the memory file + the GitHub issues + the in-repo docs.
+                                                                                                                                                                                                                             
+  Recommended handoff if you want to start fresh                                                                                                                                                                             
+                                                                
+  If you ever want to start a clean session without --resume (faster startup, no compacted-history bloat), paste this into the new session:                                                                                  
+                                                                                   
+  Resuming XDC fork work. Live state:                                                                                                                                                                                        
+  - Branch: xdc-network at origin tip (commit 0cc14885…d9d625fd5 family)           
+  - xdc02 nodes (135.181.117.109 port 12141): full (legacy), archive, snapfull, fast, snap                                                                                                                                   
+    archive head ~24.6M climbing toward 81M, all fixed-binary modes 0 merkle/0 bypass.
+  - XDC268 docker (95.217.56.168 port 12141, container gp5-v594-apothem-168-local268):                                                                                                                                       
+    canonical reference for parity checks, head 82M.                               
+  - Open: issue #682 (bypass tier 1+2 cleanup, gated on Phase 5 close), #683 (upstream                                                                                                                                       
+    sync workflow), #686 (geth-style alignment).                
+  - Phase 5 still in_progress: archive needs to cross V2 switch (56.83M) cleanly.                                                                                                                                            
+  - Read docs/UPSTREAM_WORKFLOW.md and docs/audit/STATE_DB_SUBAUDIT.md for context.                                                                                                                                          
+                                                                                                                                                                                                                             
+  That paragraph + the auto-memory + the in-repo docs is enough to pick up exactly where we are.                                                                                                                             
+                                                                                                                                                                                                                             
+  If you want to be extra-safe                                                                                                                                                                                               
+                                                                                                                                                                                                                             
+  # Save a copy of the session transcript outside ~/.claude in case it gets cleaned up                                                                                                                                       
+  cp ~/.claude/projects/-Users-anilchinchawale-github-XDCNetwork-deVTest-go-ethereum/a1d16408-3dda-475e-b04c-f5cf98591de6.jsonl \
+     ~/xdc-fork-session-2026-05-17.jsonl                                                                                                                                                                                     
+                                                                                                                                                                                                                             
+  # Or zip the whole memory + transcripts dir                                                                                                                                                                                
+  tar czf ~/xdc-fork-claude-state-$(date +%Y%m%d).tgz \                                                                                                                                                                      
+      -C ~/.claude/projects -Users-anilchinchawale-github-XDCNetwork-deVTest-go-ethereum/                                                                                                                                    
+                                                                                   
+  The tar form preserves both the transcript and the memory/MEMORY.md together — that's the full state of "what Claude knows about this project".

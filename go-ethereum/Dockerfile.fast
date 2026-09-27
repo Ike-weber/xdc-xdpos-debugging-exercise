@@ -1,0 +1,29 @@
+# XDC Network — fast-sync node image (v1.17.3 with A.28/A.29 fast-sync fixes)
+# Build:  docker build -f Dockerfile.fast -t anilchinchawale/gp5-xdc:fast-v1.17.3 .
+# Run:    docker run -v $HOME/.xdc-fast:/data -p 30303:30303 -p 8545:8545 \
+#                anilchinchawale/gp5-xdc:fast-v1.17.3
+#
+# All geth flags + operator-pinned pivot + ethstats wiring live in docker/
+# entrypoint.sh so install.sh stays minimal and image updates roll forward
+# without script changes.
+
+FROM golang:1.24-alpine AS builder
+
+RUN apk add --no-cache make gcc musl-dev linux-headers git
+
+WORKDIR /go-ethereum
+COPY . .
+RUN make geth
+
+FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates
+
+COPY --from=builder /go-ethereum/build/bin/geth /usr/local/bin/geth
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/geth /usr/local/bin/entrypoint.sh
+
+VOLUME ["/data"]
+EXPOSE 30303 30303/udp 8545 8546
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

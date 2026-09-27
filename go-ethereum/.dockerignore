@@ -1,0 +1,51 @@
+# Exclude everything that doesn't belong in the docker build context.
+# Without this, builders that share a workdir with running chain data (datadir,
+# ancients, snapshots, logs) pull hundreds of GB into the build context and
+# either OOM the daemon or bake chain state into the image.
+
+# Chain data / runtime state
+nodes-local/
+nodes-local-mainnet/
+nodes-local-testnet/
+*.ipc
+*.log
+*.lock
+chaindata/
+ancient/
+keystore/
+
+# Build outputs — rebuilt inside the container
+# IMPORTANT: do NOT exclude all of build/ — build/ci.go is required by `make geth`.
+# Only exclude the compiled artifact + workspace subdirs.
+build/bin/
+build/_workspace
+build/_bin
+dist/
+release/
+
+# Test outputs (kept from prior .dockerignore)
+**/*_test.go
+tests/testdata
+
+# Repo bookkeeping
+.git/
+.github/
+.gitignore
+.gitattributes
+.gitmodules
+
+# Local tooling / agent state
+.claude/
+.swarm/
+.vscode/
+.idea/
+
+# OS junk
+.DS_Store
+Thumbs.db
+*.swp
+
+# Scratch
+.cache/
+program.md
+p1

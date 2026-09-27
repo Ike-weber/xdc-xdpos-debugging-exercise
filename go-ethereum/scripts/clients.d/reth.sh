@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  XDC reth client fragment  —  sourced by one.sh
+#  Modes:    full only  (reth does not have snap/pruned modes yet on XDC)
+#  Networks: apothem (primary); mainnet gated behind EXPERIMENTAL confirm
+#  Status:   Experimental — M20 consensus fixes in progress.
+#            Build: https://github.com/XDCIndia/reth-xdc
+#
+#  IMPORTANT: --trusted-peers is load-bearing for reth peering.
+#  Without it the node will sit at 0 peers due to a discv4 bond-cache issue.
+#  ONE_SH_VERSION: 1.5.0
+#  1.5.0: devnet5151 branch — genesis from https://xdc.network/snapshots/devnet5151-genesis.json
+#         + networkid 5151 + no live static peers (no nodes running yet); full-sync.
+#         No ethstats — reth ethstats hardcodes ws://, stats.xdcindia.com is wss:// only.
+#  1.4.0: devnet5551 branch — --chain xdc-devnet (built-in) + 3 trusted peers at
+#         154.38.175.218 (x2) and 65.21.27.213; full-sync. No ethstats (same ws:// reason).
+#  1.3.0: net5050 static peers expanded to full 5-enode set (peers=0 fix #131);
+#         ethstats NOT wired for reth/net5050 — reth --ethstats hardcodes ws://
+#         but stats.xdcindia.com requires wss:// only → node crash; needs
+#         reth-xdc code fix (wss support) before ethstats can be enabled here.
+#  1.2.0: net5050 support (--chain xdc-net5050 + seed peer); fix chain names to
+#         canonical xdc-apothem / xdc-mainnet (bare apothem/xdc are rejected).
+# =============================================================================
+
+# Source: https://github.com/XinFinOrg/XinFin-Node/blob/master/testnet/bootnodes.list
+# Fetched: 2026-07-02  (refresh: curl https://raw.githubusercontent.com/XinFinOrg/XinFin-Node/master/testnet/bootnodes.list)
+RETH_APOTHEM_TRUSTED_PEERS=(
+  "enode://619477913e8f05fabbd81fbed6a429b5e7f162635227c110c4693857806604b971e64fa55e446bcfc46637416251bdd117cc9c104a7ab43c084f6c831be6301c@207.90.192.100:30312"
+  "enode://9a20f2554cf495945ed24be380b3f3b95ad6a732c3954500a1270ffab0e64b1631ec12f6bdd618026bcb1bd27ba36736defe264cf664ab26be0bb1b13aff1e12@38.242.205.0:30312"
+  "enode://ee1e11e3f56b015b2b391eb9c45292159713583b4adfe29d24675238f73d33e6ec0a62397847823e2bca622c91892075c517fc383c9355d43a89bb7532e834a0@157.173.120.219:30312"
+  "enode://18799318d5ca266ca7a030d05a1a3a3b20d16db41eb8950ab448cb2a8f41519a1b05b36cac508ecfc590b7701719e3012511dbfcab9d2815a8d04ba6ac5c59ab@167.224.64.218:30312"
+  "enode://32b15b2cecda49d051c23745c42208de0a29ce90d6b2c44a09e4aafc9c8f19357fd43c6a4dbfa8cfc62ef65c33f7edbc7b711b0c57555a560012ecabe641191e@46.17.98.119:30312"
+  "enode://3218092c2ac11802c9a5b0656761e7e931ed830af2bd739cb988267641bba6476d6b7c5ea263f9b69ed1a4cd17e0544f7934cf354467a0d5c4d0cf5b6f13776c@185.198.27.214:30312"
+  "enode://fb28a124dbc3058bcd19c8efa1f51e9cbbb4ebb9b1d78cd8a30636e7eaf9ebf8fe0fc33a62eb945734e17f6716f2601e315493c0a181aabf4e7498006099c7d5@38.143.58.153:30312"
+  "enode://e7ab992bde99473c34f1cd45797dc6766572ffea85b42c858368362b543963ff12e51e3537af41a4df30a1e661cf08fede44b7baf29f0f814ea73e5ba36fa771@207.90.192.35:30312"
+  "enode://455cbd6f74059ca91e1e816422159b8befe60c835f2f3602fc76df546223aaa0c705adf6a966b656bc40327413daba546f1c76e21d857c3a3dbe9b7983dd035f@66.151.42.148:30312"
+  "enode://5419ff91d324cd82ead52360c9c3dc608768bce5e4d1fff1ea4e3ddb095af375536af01fbd7af4b80adbb14f695a272610a0745428b4311dafcfca9ebae1fc53@193.109.69.104:30312"
+  "enode://5419ff91d324cd82ead52360c9c3dc608768bce5e4d1fff1ea4e3ddb095af375536af01fbd7af4b80adbb14f695a272610a0745428b4311dafcfca9ebae1fc53@152.114.194.209:30312"
+  "enode://0028b38383d8f70b9e3899b85b9e6204c7c9e28b4278f74a1b1cf250fb827cf297d611fa1c9c6d9394acfb82b334477009d4cad55d8a64c7ade15acdc97dc429@205.172.58.142:30312"
+  "enode://e7c0396ad4700e7f17b039fe349f76aeb183a385fd9ea31feda30c82248396eae7f7889fe5c077817047d68f82009e866f8ef1c461193329760782c26f7ee99b@172.98.12.15:30312"
+  "enode://7c8c73c17e5fd7b4bc566642257a39df38275adac6c26a21226da7c88e876a488f8042d0089da4fdf6891480b9a45cc60eadca5f1523a05d432543f223f4a51c@66.151.40.157:30312"
+  "enode://b69f96268005e17e67127318f32f50c50573ed336ee5678af060133c07b4c68bdf3f5d5745d23341b4239601dbc48aead88595511f2de41359fadf5defaab537@152.114.192.190:30312"
+  "enode://b54c101f414c1058c14e443e5c63bad625abc7bebbbef2d5b308c62c8fda0894267da93dd4e35f5185d394b3ea4b55a2048fde441743c2bd2b52410bc8aa0150@209.209.11.134:30312"
+  "enode://d711d2e1e27746ebfa4f6a2e1a6be1beb813612dac68dabaaf392bde0087ece80739f44b1269f4b917e50d5b18343a96a7ee816732af9001fede0e6aed69740b@104.152.208.205:30312"
+  "enode://af8e6bec3f4f5f9c870a9010dcdaa0369bf6e7157845cf30e25dd75af4bf26f3715c34c0b0411e644a53012fb525c717b29c6b9c354e7cccc7d60f943010ade9@45.155.102.83:30312"
+  "enode://200b6e3d1fa56eef12a56a89ef0f4ade366cad17cd1a80ec45d76d073e8586ade65dcecc84bde64d2a416fc1b1a50ded623223f68d332a762a91796fab217c7d@104.152.209.72:30312"
+  "enode://c68cec795fa38cd70b99c4c25cb783565de6446a30fb365afe85d86d870e7badf32370e04b06d76107f02957871f280f5acbb56acc8cf44ea914a0c019d71e12@38.102.86.183:30312"
+  "enode://7ba52c37641ca88295398a15906647a0b57c18bc7388c514cab4fd5354cbc13553af744c657b011bb620eb1452d233d3243eca7ca9daca45d8f614b9553b6e1b@212.69.87.88:30312"
+  "enode://04fc75e70667901ec7a32d6bd52f6d4ef50477ad5a49b8b4bc649ab24ce1c20b76e9724ba43cc5427749a14cb34e437a3d79f268a8a9b98224478f599f0dc93a@207.90.194.126:30312"
+  "enode://729d763db071595bacbbf33037a8e7639d8e9a97bfcfcda3afe963435d919cb95634f27375f0aadf6494dad47e506c888bf15cb5633d5f81dbb793b05b27e676@158.255.0.178:30312"
+  "enode://266dfa5fd0152c3ec2b21ac71c5ae8c263c748b417feac2d2b6b3ff8b0d64e435e7d91d079856ec7a997d3f3ead62d5bd7922ffae7937893179b36d7ae7886e9@38.102.124.102:30312"
+  "enode://c49dbc8ab18ccbbde295484b307d07f3022c418e36e40666f6b9d333604c16b0c0dd1757b5920962ecc0a4ddd2c164028e1837e5123db60a0c2d8f223a6b54aa@167.224.64.168:30312"
+  "enode://f37ea965454180d4bc4b2be95e66e9621b6d0b16be9be5e2b3c67d32e1493af0b178d4e5820f57ed76c1ad2841baf9739379246caef6f74dc2ae0fcb9141537c@5.189.191.87:30312"
+  "enode://f8c9be8bf0761c9e31374e4583f2952755f870c24f0976d64a1647a4ae2aaa9797d5dd84c0b9852e7ba6c02f1e8a35e2fb3f54ab38ae3b4ef9e62434c00dcb66@185.70.105.62:30312"
+  "enode://9724b9cff3ae4286d13b29d2e13c1db0a3ce8ed1d469b945b4f626edf42d4043375be474bf94abd9065c52a840e207a26d6c4a86de87263d1cf0f8af561d1c2a@104.152.209.185:30312"
+)
+
+# Source: https://github.com/XinFinOrg/XinFin-Node/blob/master/mainnet/bootnodes.list
+# Fetched: 2026-07-02  (refresh: curl https://raw.githubusercontent.com/XinFinOrg/XinFin-Node/master/mainnet/bootnodes.list)
+RETH_MAINNET_TRUSTED_PEERS=(
+  "enode://874589626a2b4fd7c57202533315885815eba51dbc434db88bbbebcec9b22cf2a01eafad2fd61651306fe85321669a30b3f41112eca230137ded24b86e064ba8@5.189.144.192:30303"
+  "enode://ccdef92053c8b9622180d02a63edffb3e143e7627737ea812b930eacea6c51f0c93a5da3397f59408c3d3d1a9a381f7e0b07440eae47314685b649a03408cfdd@37.60.243.5:30303"
+  "enode://81edfecc3df6994679daf67858ae34c0ae91aac944a84b09171532b45ad0f5d0c896eb8c023df04eaa2db743f5fccdf18cf7e2d12120d37a2c142a3be0a348cd@38.102.87.174:30303"
+  "enode://053ba696174e7f115e38f0e3963d0035ac20dc18e9a5c5873f9e90fe338d777f726d68d053c987416ec0bd97d4d818c59a8a23bc9ea854069ea2310846e27e7d@162.250.189.221:30303"
+  "enode://b3ce1f8894af033cc2adbcb0836fe18d283af8574c451e385fd362165a6e5eded1b59b640c4d92048283bad9855721345a28ebaf28f66ace00a7134871d1e2a2@38.143.58.166:30303"
+  "enode://938f2e3f409a12573e6da6460b6497c45e2bec393756b989b8874f647911cca39d0ffef8554a45698a8f21a7e870288beb638b3770537a12118e30bd6f9ae806@109.199.104.176:30303"
+  "enode://f8848e405142b8e88f054fe85ac5e4a75cfd7e353aee7e66797719828d3d5aa2cd62f1355140c0852d3dcb2439a076234c77415ca701318ea1f69a496a0b4b32@109.123.232.199:30303"
+  "enode://0857894c01314e75520fbdb7e37869666f230c8ab96c0e3067561077209e8f48a9cefb3a71c3c8094448629c152f22c2e5e66bb7ed2c38bfbd9f24941f571beb@103.7.54.103:30303"
+  "enode://91e59fa1b034ae35e9f4e8a99cc6621f09d74e76a6220abb6c93b29ed41a9e1fc4e5b70e2c5fc43f883cffbdcd6f4f6cbc1d23af077f28c2aecc22403355d4b1@149.102.140.198:30304"
+  "enode://91e59fa1b034ae35e9f4e8a99cc6621f09d74e76a6220abb6c93b29ed41a9e1fc4e5b70e2c5fc43f883cffbdcd6f4f6cbc1d23af077f28c2aecc22403355d4b1@144.126.142.140:30304"
+  "enode://c665260ee724b0cdd9cb084bc010b40a23224b2d3b1ddc996bb101165c9853fae6062bacd1c8357b00f1d049c74917d7edea387245eeaadf136a33b7d59163f1@152.114.192.194:30303"
+  "enode://adc64a4de268bfd401b9eeb65c02028cfef3b1a954eb86e0ed04250daf8b8f46039d3568a20f50a3a7dd467dca836e81f599ef9442f96ddaca08b85ea49d2d9f@38.102.87.214:30303"
+  "enode://952fc1680beb470933a1d4c27945d1315888806bd40dc4c2e720c9b64bb838114acf55ae9113ca7470bfb215162b26b6734f2d8e6cf07ac9a7810b15badce46b@38.49.212.98:30303"
+  "enode://35c8de40d9d8952aa0a0f892dc866e59e20b0ba5ad2aa4cbde88043739fadc1bf0b36492032bce8f2b673f6e201480929e131ce103435fbf774d63215c258b1f@145.239.253.161:30303"
+  "enode://9e021b0d298174d649558df1808b45b3d6ffb82bf1a869ebcb4907ca2afb38f694a50f4e92f7e0fb30d506abf324d7ce769a24ec9332d163a90e858a3d706cb4@204.188.254.234:30303"
+  "enode://766a2ca2b899e4f7b0d8dc0c15e32dc212030543feb6ed1cca981dd577b20b25094506d44343b9bb5840102716ab37d390731d5ca4fb41966a17109fe477d6ae@104.152.209.135:30303"
+  "enode://55bb595b04759e545bb36b93c7f656524685bef692f06098f293a661bbd2b29b823db4d8a21c6d8757cf5111bfdb44dd22ecdeb6cf3531faa9ca0e928127320a@104.152.210.117:30303"
+  "enode://b29fed5affa4ceda46e3a5ee8db1fe09fbddf98b92f94a0cf52e662701443c35e74ac854f009fcc23c5d8090baa406a8d3ebc10106ba2d284047682283c2aa59@209.209.8.252:30303"
+  "enode://47c62b62194c98deab0de7d632451fa1cdced6992a985851655083c49ae76048df06e5fb0c2aaa8c2367e31186b8726526855337bfd843af273307e0abc7e17e@38.102.84.145:30303"
+  "enode://4c77910fdd567184a7803da86be603680d161fa9ab4721890ac41ecd6696497da1c5d9076b74985a873900538cd32f94e86990f3197b4bf0a43923c6a42901f3@162.250.189.149:30303"
+  "enode://7bb3e723a13254412cebe8d481de7afc053c2ce9d91e69aa7bffab6ff973fffff2b3c786838ca23376be8856239566a49970a7c08cd5dde7328f0beeb59a18fd@162.250.190.246:30303"
+  "enode://53137ef0408a2e36804c95549e6e1cbd4b24c7fd713d08ce57390b08edf09f4de1ccd083e8e1dd01ad0ea1335c405f511e92e4db765575cb440da0ad49eac6b5@162.250.191.160:30303"
+  "enode://436be9f289209f25e22b913ffc00693a35faa24b42d01aac38e9cc3fe11e311861ee24a6c9ce6dcd913ec6b3bb3aeac5c9c75278aea17b1a4b183b0d29b3e0e6@38.102.124.68:30303"
+  "enode://8972335640e8b675ed135b16b80dfbdf905d56f64dc3bce4f23d0262ded4cde74139f26805def8cf96a574e042f3c937148b2cdc843b6c9a806d3a91a202c7db@104.152.211.94:30303"
+  "enode://449f8e421fdc19b1f525fe524aace520309f7c2f002519a16067c0b24bb2fb24773d9ae3ddb0ca9d4104d75119187a5990958e41e3b3452fa2b71792928fa5fa@104.152.209.134:30303"
+  "enode://815c89950fc77bf11acf432ea9c0ef180579bdec8bb7bb095117fece147185807e2d461194b2cfc3bd6cb72dc5fb6e64d32a9861dcfac4e79dc6c11f61833c29@162.250.191.14:30303"
+  "enode://31bc9409f7618c2817fa081e40629b725bbff94cb7dd4113f3acb5fce517213ec5cb1f20eac2c4f5505119b987b670147da2c7a0fb4a58bdc7c1d56a788615a0@38.102.87.32:30303"
+  "enode://1cf98a852975ccfd3e54b9fcd369a790e74d0e527f3452b11e3160f0b9e1fc9297e68837dabc3093c43c79a7740afad4e2a68b53161c5d711b3d06a79db72e5f@104.152.209.131:30303"
+  "enode://560be672a5696a9079fbdb32343efb72d058cce72af001dc5c77a89f54a6cf1e1a914f5d7aa93527073447b3e26d34992b1a439235ad3225b1d3c6874f62494f@104.152.209.119:30303"
+  "enode://29856324d63fbb6ca81080e105d6d2c935bf38013deefcaf05ac9107956dd0f068426edc2267789b06294bae7694c7be2d7b2d5740b8e4c9129cb3e50f11d82b@104.152.210.92:30303"
+  "enode://3bb536b4137f9e1f03e34be32cc7ef7580c8ab10fbd3a9082ae0a553dc7d282c0d2927fab79b2476f81b29ca219651e21a08a0c5bfddd067f9eb038e30c49ed1@38.102.124.161:30303"
+  "enode://a3e5bb9a97d543ad8f7fe694480135bae412f95af73fabf709eaf5e4b8656ee412075f651ab5ee7ad667023f727d4e8ed4f9f6d9d3ccd6ac2deefe5d6a1a77ec@38.102.87.241:30303"
+  "enode://2e45eeb31cb86aa4a032d087220b86d0ee3d1d078f675bed807f6ddf049bb02a21aa259f5ac4cf0fffa2cf1dc5cce9c50ca2d28533f5f95ad4346ee8a0b99fbd@207.90.192.188:30303"
+  "enode://62330195cec776dae468027c701ee6711db75c0e32d20654725f0c68eac6a7c48e8fa01451d04cc4e9b0735c0bbc184556f79b06fe5a9f8a21be9f92080db380@38.102.85.50:30303"
+  "enode://dcfb15b4d8c8f2f6b9645ad160349ac24ac1e5db655e4dccc470da5c9d0e63e280169ae2d4d6ca43ef0ae5c1050b9c4a21954bbbef59f19083ef8a801672e23a@162.250.191.70:30303"
+  "enode://8c7d843227a6bc95b3dcc8609c7926379ee2fde2dcac0b34847ca044f89ca4dd56167b077be18c7c6a3f049e9b85aabe66e87876cc1bb90e7e33ea6e4e0055a9@38.102.87.174:30303"
+  "enode://ec53417068eb5f7318b3537f77bdbf241a05cb1aaaaaabb1a8fe645fb63929ffb8a81943af2a9d5a14b1d847ca1bf79ff00e73f75bc9ba5d42c8477e490e9b3d@38.49.209.177:30303"
+  "enode://fa5795affb3c8ba13996d4eb3d226a044a29dcf8209833c7eb048411f7a727f0c6436234d053bba880d30c29337277eca57c981a9219d25d38b845d2f1ade100@185.252.234.115:30303"
+  "enode://80ab40b2cbd5ee1e0f758cd2b129c854c9e97a7a8186bc2f7ac8b61a815a5530ab6f68cdefb5901a456878437098cf1a70f395740d6dd7907639f34b9f0cf95c@85.190.246.191:30303"
+  "enode://656c6568ae530c793f3f4d84bd603bc3994277a3b8e3c36f197d991749f2a8179368b83d4e2fe5b2f2971181d447c7eaf686f16a858963832294c2c2b691417d@149.102.140.198:30303"
+  "enode://f9ee4c28d442df3a90c374f802eb8c184f83d9171ab017e1c3a37e9537336c830bcbe0caaf810aee8bbe8b4a080621790bec284b88c617d7eceffd07b98d4b99@207.244.252.29:30303"
+  "enode://4a18d266539766b3b5e1364f91a2d60268005ca43ab6c2a8a35327b539082fc41e4dfa6e7bf6cf0743e311a08cb95dc3b90c5103e54a31175495c4b45bcf542d@85.239.242.163:30303"
+  "enode://f9c529a3ca35478ad468d9ed6f53413c0319ac985a4090c2bebe992d4af5fa5a711c5dd6c325340cee5e1115048ff4cf1089c8f185b94a9b0efb2e6eee167686@37.60.244.133:30303"
+  "enode://a9682f01127b711cd3c42358f057fa730f3535aed9ffa7bfc0721830098b4afb3cfd7c2bd7bf60cf42a2089b4048f935c3b483727a3e17b73aeb6b5374695bbb@109.123.242.198:30303"
+  "enode://342635ca1cae181f2132147175a9cae3159f547dc8b3b287b8cf03e86c1815ef3baec753b6d0ece121439e643cf12ae5a7b6ed1b902e82ae09c3302b133d139c@86.48.31.130:30303"
+  "enode://ff039ecd75d99a1f51f83aa408baaad070f57e98073f33b2ad90b2bc1e056ff728254e0ea8dd866528130f62697b90be7100de14b2380cd366fa5ad4c4a4a338@85.239.236.10:30303"
+  "enode://e5567ad0fab8f95880de949d1a50b384bef98a661084a9d9506eb936bef60c178b1d6311dc106230c032185db3b4ef358ad340a8e54fcf1a77e47f10ff9f09c1@45.10.162.64:30303"
+  "enode://5491defdafdf29b919751f2e66c7da01d611d2aafc4e2e8a6edaab755dc509fb5c4dda995f8090bb24fcb9548f028ac263c4e15333b189a65c0d92bbc127c217@164.68.115.24:30303"
+  "enode://0cbee8e5599530b412e24f1c21aca465d313ed7fbb039f204239c4fbd048b740ff9dabf6b3ce046f3dc0ddbf0650eae18f9c61ace0c9ecffbe4ff241d87f0791@84.247.183.213:30303"
+  "enode://5847f682357453ab984e96481848bcf80e7ad5983822e5465a0499d808c377a18949f7c793d794485b746c57f4abb1a05fff9ffbab07a52097b84ba82ae251ea@147.93.157.137:30303"
+  "enode://8a5fdb8f00b8237e95bc47e33752b622728c89d0f33cd34620d42a671c88820496b47403419534a3c33c48d2cfd97e15a5f1f71fbc0ea946256911ab4250bac8@147.93.152.231:30303"
+  "enode://8e3ec3dd124e07c5b2e3edea314b9139d6fea02f5d37fe4f37fafc86c4e7c1fac77c3ac635ea67675209677ec45b77f9fde4776de4c6c88251445858d4713f12@46.250.240.52:30303"
+  "enode://13f82d394ce912272747847d988361dc611ca2b4b910e64c9692e0054736eb428ab8da1aaca9ef887155e59634312a5eec657b251d08c0328da9d5a710e9afe4@149.102.148.150:30303"
+  "enode://b9d448697d4f9d1f3ec64162c61fbc171fc9888137c024206fac04411c93edff4d4fc5079b16d92d83ecce0cf4866f0f118fc56dfa171436a3919c6eb45dde4f@207.180.240.193:30303"
+  "enode://9d7dabb26acc8b2ca6e8fe3c8afdaa4aa8c8383add54dae10516949a3709f21c2c891ad8a37fcc5d2d5a85aab90cb6b07a186553f611c18e1131a827848efd64@45.58.169.153:30303"
+  "enode://bc315e08ee6f2e8a4cde8abfb8b46873c449a5a9fee5ff2bccfdee114ecdea8d952be623dfd97d00b20657837d87dd963f44e83e7dd38d0f6c4aa13ca0bcf208@45.58.149.95:30303"
+  "enode://2d5e3b19171f4d78f2dcb313d2fd28fdb6a5ffbc6c646a2027beff5da2ae2cc2a9ed72f829cac2f29f5a29fddff215caeafd76fb224c45ae161ddc49731a9635@208.98.38.217:30303"
+  "enode://31866c03bab079baad7b0d5ffe74f456a9386fc9a42470682c0da2c5fe50052fb552b5b08119d0f553241b693a85b1a511a10cd77afcbb00f99a9ba2f3ed9fdf@204.188.254.226:30303"
+  "enode://18e712438014ceb9711f0554897625f6981a0441042161cb3c2cf4611055b1bb770bac0cd70cb4c04063ae5f17deb268f6426238f230822edcce6c5bc18d17d3@45.58.169.158:30303"
+  "enode://ec4ef1dd31fc945de188ab50d9c8e8a0dbacff196269624cbb47bf077feb5ab9155486e1f1c591a503d1cb35297291fa53f1ac6eb130abde2d26e306d8096f94@208.98.38.230:30303"
+)
+
+# Source: devnet-5551 bootnode list from /data/xdc-nets/devnet-bootnodes.txt on xdc-prod (65.21.27.213).
+# Confirmed: xone-devtest peers through these two enodes at 154.38.175.218.
+# The xone-devtest observer node enode is also included for extra connectivity.
+# reth uses --chain xdc-devnet (built-in chainspec; --chain 5551 also accepted).
+# Full-sync only — no snapshot served for devnet-5551.
+# Ethstats NOT wired — reth --ethstats hardcodes ws://, stats.xdcindia.com requires wss://.
+RETH_DEVNET5551_TRUSTED_PEERS=(
+  "enode://fae09c24badef5488f2bde8c88c27317919e2eaa311bee5d3e087756c8080add923d94389cb5ac29e2abd85519535c25423136d39122459b594ea58e064d6918@154.38.175.218:30701"
+  "enode://a183045c9eb8eebe2dc3ab4197630be625a03981646b668dcf74959a0c4341cb88f00b53bf0749d1e081033df20cfcb75b71054e2a03ecfdef83151f5048e1e0@154.38.175.218:30799"
+  "enode://6a30ec5b4c8a6719ad5c84368502166784b88e976ca626f5277211792570b6b8f6726f187da35784c877d114db52484e89b376c5a8194ae060f68695703694b8@65.21.27.213:30330"
+)
+
+# Source: devnet-5151 static peers.
+# VERDICT: NO LIVE 5151 NODE EXISTS — the enode list is empty until a node is
+# spun up. Genesis is available at https://xdc.network/snapshots/devnet5151-genesis.json
+# (chainId 5151, sha256 96986a4a). Wire peers here once a node is running.
+# reth does NOT have a built-in xdc-devnet5151 chainspec; a genesis file is
+# required. The genesis is downloaded to _datadir on first run.
+# Full-sync only. Ethstats NOT wired (ws:// vs wss:// mismatch — see above).
+RETH_DEVNET5151_TRUSTED_PEERS=(
+  # no live nodes yet — add enodes here once devnet-5151 validators are running
+)
+
+# Source: net5050 validator fleet (project_net5050_stress_testbed / reference_net5050_rpc_gateway_and_peers).
+# net5050 is an XDPoS stress-net (chainId 5050 / 0x13ba); all 5 public validator
+# enodes are wired here to defeat the peers=0 issue (#131 discv4 bond-cache).
+# Sync mode for net5050 is FULL from genesis — snap/fast state is not served by
+# any peer (#96), but the chain is small (~361k blocks) so full-from-genesis is
+# the correct storage-efficient path.
+#
+# NOTE: --ethstats is intentionally NOT wired for reth on net5050.
+# reth's --ethstats flag hardcodes a ws:// connection, but stats.xdcindia.com
+# requires wss:// only. Passing --ethstats causes an immediate TLS handshake
+# failure that crashes the node. A reth-xdc code fix (wss:// support in the
+# ethstats client) is required before this can be enabled here.
+RETH_NET5050_TRUSTED_PEERS=(
+  "enode://507918630af3a6080867ec3987e9d0054bbb18c97ef38ae39f05f27a13371aab067b2c9e97099c554582b542946742d999e77a84da33f2ac07498a8f03d6c261@65.21.71.4:30550"
+  "enode://7d78c32e5dfade9319b1fb564d02fac8aa1474fd01cfa6a6dce689c4f16aa2f742d4492db09930124185f8942abe1bd6b5fa1b2b572f1cbe2641e7411299e14d@65.21.71.4:30552"
+  "enode://a4b966a579d1c7abe9f8856a612978db20483ce0eabca2c9ed9768a05d08e2114d14568931fbd3e62fa5f533bfe65d40381ed014c56a67ed8ab212d85bb9d403@65.21.71.4:30554"
+  "enode://d2c5ccdc96fe0d4574242572e98057834e7bf5ea6a01afd1e15e81c0bdda735788367581c57f6a79502664d6163c4b3bbb223163382daa1f0c2d3f77d326c709@185.180.220.183:30550"
+  "enode://5baefc523ad83eccf9021a1ccb7695496cd4bf82fe96c82557e4238869e50bb8ede9cdb2417d6bde1e04ce000a0186bf3f4f08992fea80703a2788c4342ebf34@95.217.56.168:30551"
+)
+
+# Build comma-joined trusted-peers flag value; picks the right array by network arg.
+_reth_trusted_peers_flag(){
+  local _net="${1:-apothem}" result="" _arr
+  case "$_net" in
+    mainnet)     _arr=("${RETH_MAINNET_TRUSTED_PEERS[@]}") ;;
+    net5050)     _arr=("${RETH_NET5050_TRUSTED_PEERS[@]}") ;;
+    devnet5551)  _arr=("${RETH_DEVNET5551_TRUSTED_PEERS[@]}") ;;
+    devnet5151)  _arr=("${RETH_DEVNET5151_TRUSTED_PEERS[@]}") ;;
+    *)           _arr=("${RETH_APOTHEM_TRUSTED_PEERS[@]}") ;;
+  esac
+  for p in "${_arr[@]}"; do result="${result:+$result,}$p"; done
+  printf '%s' "$result"
+}
+
+# Hook: no snapshot for reth today
+client_snapshot_name(){
+  echo ""
+}
+
+# Hook: sync time estimate
+client_sync_estimate(){
+  echo "days (full execution sync from genesis; no snapshot published)"
+}
+
+# Hook: no special requirements beyond bash + the binary
+client_requirements(){
+  return 0
+}
+
+# Hook: launch arguments
+# Transcribed from xdcscan:/root/workspace/XDC/reth/run.sh (apothem known-good config).
+# Mainnet: same flags + mainnet chain id — only reachable behind EXPERIMENTAL gate.
+client_start_args(){
+  local _net="${1:-apothem}" _mode="${2:-full}"
+  local _datadir="${DATADIR:-$DIR/data}"
+  local _trusted; _trusted=$(_reth_trusted_peers_flag "$_net")
+
+  # Chain value must match the binary's XDC chainspec parser, which accepts the
+  # canonical xdc-* names (and numeric chain IDs), NOT bare "apothem"/"xdc".
+  # devnet5551: built-in as xdc-devnet (or 5551) — no genesis file needed.
+  # devnet5151: no built-in chainspec; download genesis to datadir on first run.
+  local _chain_flag=""
+  case "$_net" in
+    apothem)    _chain_flag="--chain xdc-apothem" ;;
+    mainnet)    _chain_flag="--chain xdc-mainnet" ;;
+    net5050)    _chain_flag="--chain xdc-net5050" ;;
+    devnet5551) _chain_flag="--chain xdc-devnet" ;;
+    devnet5151)
+      local _genesis_file="$_datadir/devnet5151-genesis.json"
+      if [ ! -f "$_genesis_file" ]; then
+        mkdir -p "$_datadir"
+        echo "reth.sh: downloading devnet-5151 genesis to $_genesis_file" >&2
+        curl -fsSL "https://xdc.network/snapshots/devnet5151-genesis.json" \
+          -o "$_genesis_file" || { echo "reth.sh: genesis download failed" >&2; return 1; }
+      fi
+      _chain_flag="--chain \"$_genesis_file\""
+      ;;
+  esac
+
+  printf '%s' "\
+node \
+--datadir \"$_datadir\" \
+$_chain_flag \
+--http --http.addr 127.0.0.1 --http.port \"${RPC_PORT:-8585}\" \
+--http.api eth,net,web3,debug,admin \
+--ws --ws.addr 127.0.0.1 --ws.port \"${WS_PORT:-8586}\" \
+--authrpc.addr 127.0.0.1 --authrpc.port \"${AUTH_PORT:-8587}\" \
+--port \"${P2P_PORT:-30326}\" \
+--max-outbound-peers 25 --max-inbound-peers 25 \
+--trusted-peers \"$_trusted\" \
+-vvv"
+}
+
+# Hook: RPC port for health-check
+client_rpc_port(){ echo "${RPC_PORT:-8585}"; }
+
+# Hook: generic SIGTERM stop
+client_stop(){ return 0; }

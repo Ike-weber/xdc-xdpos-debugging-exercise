@@ -1,0 +1,118 @@
+name: Alpha Deploy + Hive E2E (upstream-sync)
+
+# Runs after an upstream-sync PR is merged into the stable branch: builds the node,
+# runs the XDPoS parity gate, spins an alpha devnet node, runs Hive e2e, and opens
+# an issue tagging the reviewer if any step fails.
+#
+# The build + parity-gate jobs run on ubuntu-latest. The alpha-deploy + full Hive
+# jobs need a self-hosted runner with Docker (label: [self-hosted, xdc-alpha]) and
+# the XDC hive-client definition; they no-op with a clear notice if that's absent.
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'branch/tag/sha to validate'
+        default: main
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  REVIEWER: AnilChinchawale
+
+jobs:
+  gate:
+    # Only for merged upstream-sync PRs, or a manual dispatch.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       startsWith(github.event.pull_request.head.ref, 'upstream-sync/'))
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.v }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.event.pull_request.base.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: true }
+
+      - name: Version
+        id: ver
+        run: echo "v=$(grep -E 'Patch\s*=' version/version.go | grep -oE '[0-9]+' | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: make geth || go build ./cmd/geth
+
+      - name: XDPoS parity + consensus gate (SACRED — consensus must be bit-exact)
+        run: |
+          set -o pipefail
+          go test -short -count=1 ./consensus/XDPoS/... 2>&1 | tail -n 80
+          # Cross-client conformance / parity suite (present on the stable branch)
+          if [ -d tools/xdc-conformance ]; then
+            go test -count=1 ./tools/xdc-conformance/... 2>&1 | tail -n 80 || \
+              (echo "::error::XDPoS conformance/parity gate FAILED"; exit 1)
+          fi
+
+  alpha-hive:
+    needs: gate
+    # Alpha deploy + Hive need Docker + a devnet; run on a self-hosted runner when available.
+    runs-on: ubuntu-latest        # switch to [self-hosted, xdc-alpha] once the runner is registered
+    if: always() && needs.gate.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: ${{ github.event.inputs.ref || github.event.pull_request.base.ref }} }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: true }
+      - name: Build alpha geth
+        run: make geth
+
+      - name: Alpha node smoke (throwaway devnet)
+        id: alpha
+        run: |
+          set -e
+          BIN=$(ls build/bin/geth 2>/dev/null || echo ./geth)
+          echo "Starting alpha node on an isolated dev datadir..."
+          D=$(mktemp -d)
+          "$BIN" --dev --http --http.api eth,net,web3,debug --http.port 8547 --datadir "$D" \
+            >"$D/node.log" 2>&1 &
+          NP=$!; sleep 20
+          B=$(curl -s -m5 -X POST -H 'content-type:application/json' \
+            --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+            http://127.0.0.1:8547 | grep -oE '0x[0-9a-f]+' | tail -1 || true)
+          kill $NP 2>/dev/null || true
+          echo "alpha head=$B"
+          [ -n "$B" ] || (echo "::error::alpha node did not answer RPC"; tail -40 "$D/node.log"; exit 1)
+
+      - name: Hive E2E
+        id: hive
+        continue-on-error: true    # full Hive/XDPoS needs Docker + the XDC hive-client def
+        run: |
+          if ! command -v docker >/dev/null 2>&1; then
+            echo "::notice::Docker not present on this runner — skipping Hive. Register a [self-hosted, xdc-alpha] runner + the XDC hive client to enable."
+            exit 0
+          fi
+          git clone --depth 1 https://github.com/ethereum/hive /tmp/hive
+          cd /tmp/hive
+          # Requires a `clients/xdc` definition (Dockerfile wrapping this build). Run the smoke/rpc sim.
+          if [ -d clients/xdc ]; then
+            go run . --sim ethereum/rpc --client xdc 2>&1 | tail -n 120
+          else
+            echo "::notice::clients/xdc hive definition not yet added — add it to enable full Hive e2e."
+          fi
+
+      - name: Open issue on validation failure
+        if: failure()
+        env: { GH_TOKEN: ${{ github.token }} }
+        run: |
+          gh issue create \
+            --title "🚨 Alpha/Hive validation failed after upstream-sync (${{ needs.gate.outputs.version }})" \
+            --body "The Alpha Deploy + Hive E2E workflow failed post-merge.
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          Do NOT tag a release until this is green. cc @${{ env.REVIEWER }}" \
+            --assignee "${{ env.REVIEWER }}" --label "upstream-sync,ci-failure,release-blocker" || true
