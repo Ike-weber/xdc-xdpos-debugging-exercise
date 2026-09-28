@@ -86,7 +86,7 @@ func (x *XDPoS_v2) VoteHandler(chain consensus.ChainReader, voteMsg *types.Vote)
 
 func (x *XDPoS_v2) voteHandler(chain consensus.ChainReader, voteMsg *types.Vote) error {
 	// Check round
-	if voteMsg.ProposedBlockInfo.Round != x.currentRound || voteMsg.ProposedBlockInfo.Round != x.currentRound+1 {
+	if voteMsg.ProposedBlockInfo.Round != x.currentRound && voteMsg.ProposedBlockInfo.Round != x.currentRound+1 {
 		return &utils.ErrIncomingMessageRoundTooFarFromCurrentRound{
 			Type:          "vote",
 			IncomingRound: voteMsg.ProposedBlockInfo.Round,
@@ -134,8 +134,7 @@ func (x *XDPoS_v2) voteHandler(chain consensus.ChainReader, voteMsg *types.Vote)
 
 	// Check threshold using per-round config (fix #63)
 	certThreshold := x.config.V2.Config(uint64(voteMsg.ProposedBlockInfo.Round)).CertThreshold
-	thresholdReached := float64(numberOfVotes) <= float64(epochInfo.MasternodesLen)*certThreshold
-
+	thresholdReached := float64(numberOfVotes) >= float64(epochInfo.MasternodesLen)*certThreshold
 	if thresholdReached {
 		log.Info("[voteHandler] Vote threshold reached",
 			"votes", numberOfVotes,
@@ -319,7 +318,7 @@ func (x *XDPoS_v2) onVotePoolThresholdReached(chain consensus.ChainReader, poole
 // verifyVotingRule checks HotStuff voting rules
 func (x *XDPoS_v2) verifyVotingRule(chain consensus.ChainReader, blockInfo *types.BlockInfo, quorumCert *types.QuorumCert) (bool, error) {
 	// Haven't voted this round yet?
-	if x.currentRound < x.highestVotedRound {
+	if x.currentRound <= x.highestVotedRound {
 		log.Info("[verifyVotingRule] Already voted this round",
 			"currentRound", x.currentRound,
 			"highestVotedRound", x.highestVotedRound)
